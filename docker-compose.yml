@@ -1,0 +1,121 @@
+---
+# Airflow 2.10 + two PostgreSQL databases:
+#   * `postgres`  -> Airflow metadata (internal, port not published)
+#   * `warehouse` -> the star schema (published on localhost:5433)
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: books-dwh/airflow:2.10.5
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__FERNET_KEY: "46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho="
+    AIRFLOW__WEBSERVER__SECRET_KEY: "books-dwh-pipeline-local-secret"
+    AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: "30"
+    AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
+    PYTHONPATH: /opt/airflow
+    # The pipeline (src/config.py) reads these; inside the network the
+    # warehouse is reachable on the default PostgreSQL port.
+    POSTGRES_HOST: warehouse
+    POSTGRES_PORT: "5432"
+    POSTGRES_DB: warehouse
+    POSTGRES_USER: warehouse
+    POSTGRES_PASSWORD: warehouse
+    DATA_DIR: /opt/airflow/data
+    SCRAPER_REQUEST_DELAY: "0.1"
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./src:/opt/airflow/src
+    - ./sql:/opt/airflow/sql
+    - ./data:/opt/airflow/data
+    - ./logs:/opt/airflow/logs
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: books-airflow-metadata
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  warehouse:
+    image: postgres:16-alpine
+    container_name: books-warehouse
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-warehouse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-warehouse}
+      POSTGRES_DB: ${POSTGRES_DB:-warehouse}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - warehouse-db-volume:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-warehouse} -d ${POSTGRES_DB:-warehouse}"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: books-airflow-init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create \
+          --username admin --firstname Admin --lastname User \
+          --role Admin --email admin@example.com --password admin || true
+        echo "Airflow metadata is ready (admin / admin)"
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: books-airflow-webserver
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: books-airflow-scheduler
+    command: scheduler
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  airflow-db-volume:
+  warehouse-db-volume:
