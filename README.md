@@ -249,7 +249,7 @@ RUN_DB_TESTS=1 pytest -m integration -v
 
 CI (`.github/workflows/ci.yml`) runs three gates on every push/PR: **ruff lint**, **DAG compile check**, **unit tests with coverage**, plus the **PostgreSQL integration job**.
 
-## SQL worth showing in an interview
+## Analytical SQL queries
 
 Top 3 most expensive books per category (`RANK`):
 
@@ -280,10 +280,10 @@ ORDER BY change ASC NULLS LAST;
 
 More in [`sql/analytics_queries.sql`](sql/analytics_queries.sql).
 
-## Design decisions (and the questions they answer)
+## Architecture & design decisions
 
 * **Why a class for the scraper?** Parsing (`parse_categories`, `parse_books`), HTTP (`fetch`) and crawling (`scrape_category`, `scrape`) are separate responsibilities; the parsing methods are static and unit-testable without a network, and the session is injectable (tests use a fake session).
-* **Why crawl categories instead of detail pages?** The listing page does not contain the category, but the *page context* does. Crawling 50 category feeds (~100 requests) replaces 1 000 detail-page requests and keeps the category attribute exact.
+* **Why crawl categories instead of detail pages?** The listing page does not contain the category, but the page context does. Crawling 50 category feeds (~100 requests) replaces 1 000 detail-page requests and keeps the category attribute exact.
 * **Why star schema?** The fact table is narrow (one row/book/day) and the dimensions carry the descriptive text. Category averages, price history and per-book day-over-day changes are simple joins + window functions.
 * **Why is the load idempotent?** Airflow retries and manual re-runs are normal. `UNIQUE (date_key, book_sk)` + `ON CONFLICT DO UPDATE` makes a re-run a repair, not a duplicate.
 * **Why does `quality` have `retries=0`?** Network errors are transient (retry), data bugs are deterministic (fail fast). Retrying a rating of 9 would only waste slots and delay the alert.
