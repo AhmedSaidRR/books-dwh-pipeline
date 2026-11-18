@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+
+# Local configuration & secrets
+.env
+
+# Pipeline artefacts
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+logs/
+airflow-logs/
+
+# OS
+.DS_Store
+Thumbs.db

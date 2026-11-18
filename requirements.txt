@@ -1,0 +1,10 @@
+# Versions aligned with Airflow 2.10.5 constraints (Python 3.11), so the
+# Docker image can install them without dependency conflicts:
+# https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.11.txt
+requests==2.32.3
+beautifulsoup4==4.13.0
+lxml==5.3.0
+pandas==2.1.4
+psycopg[binary]==3.2.3
+python-dotenv==1.0.1
+pyarrow==16.1.0
